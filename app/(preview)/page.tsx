@@ -119,9 +119,9 @@ export default function Home() {
       recognition.continuous = true;
       recognition.interimResults = true;
 
-      recognition.onresult = (event: SpeechRecognitionEvent) => {
+      recognition.onresult = (event: any) => {
         let transcript = "";
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
+        for (let i = 0; i < event.results.length; ++i) {
           transcript += event.results[i][0].transcript;
         }
         setRealTimeText(transcript);
@@ -283,6 +283,7 @@ export default function Home() {
               onClick={startRecording}
               className="ml-2 p-2 bg-red-500 rounded-md text-white"
               disabled={isRecording}
+              aria-label="Start recording"
             >
               <Mic />
             </button>
