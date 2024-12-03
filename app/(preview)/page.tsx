@@ -84,7 +84,7 @@ export default function Home() {
         ...suggestion,
         label: suggestion.label
           .replace(/_/g, " ")
-          .replace(/\b\w/g, (char) => char.toUpperCase()),
+          .replace(/\b\w/g, (char: string) => char.toUpperCase()),
         action: suggestion.action || "Type your message",
       }));
     } catch (error) {
