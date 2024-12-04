@@ -77,7 +77,7 @@ export const Message = ({
           )}
     
           <div
-            className={`flex flex-col gap-1 w-[calc(100% - 320px)] mb-4 ${
+            className={`flex flex-col gap-1 w-[calc(100% - 120px)] mb-4 ${
               role === "user" ? "items-end" : "items-start"
             }`}
           >
@@ -86,7 +86,7 @@ export const Message = ({
                 role === "user"
                   ? "bg-blue-600 text-white"
                   : "bg-gray-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-300"
-              } p-4 rounded-lg shadow-md`}
+              } p-4 rounded-lg shadow-md w-full`}
             >
               {typeof content === "string" ? (
                 <Markdown>{content}</Markdown>

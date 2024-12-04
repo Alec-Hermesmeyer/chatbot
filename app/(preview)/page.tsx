@@ -98,17 +98,28 @@ export default function Home() {
   };
 
   const handleSuggestedAction = async (action: string) => {
+    // Transform the action into a user-friendly format
+    const formattedAction = action
+      .replace(/_/g, " ") // Replace underscores with spaces
+      .replace(/([a-z])([A-Z])/g, "$1 $2") // Split camelCase into separate words
+      .replace(/\b\w/g, (char) => char.toUpperCase()); // Capitalize each word
+  
+    // Add user-friendly message to conversation
     setMessages((prev) => [
       ...prev,
-      <Message key={prev.length} role="user" content={action} />,
+      <Message key={prev.length} role="user" content={formattedAction} />,
     ]);
-
-    const response: ReactNode = await sendMessage(action);
-
+  
+    // Send the descriptive title directly to the AI for processing
+    const response: ReactNode = await sendMessage(formattedAction);
+  
+    // Add the AI response to the chat
     setMessages((prev) => [...prev, response]);
-
+  
+    // Collapse suggestions after the user selects one
     setIsSuggestionsVisible(false);
   };
+  
 
   const startRecording = async () => {
     try {
@@ -221,7 +232,7 @@ export default function Home() {
       <div className="flex flex-col flex-grow justify-evenly">
         <div
           ref={messagesContainerRef}
-          className="flex-grow overflow-y-scroll p-4"
+          className="flex-grow overflow-y-scroll p-36"
         >
           {messages.map((message, index) => (
             <React.Fragment key={index}>{message}</React.Fragment>
