@@ -47,7 +47,7 @@ export default function Home() {
     const conversation = useConversation({
       onConnect: () => console.log("Voice conversation connected."),
       onDisconnect: () => console.log("Voice conversation disconnected."),
-      onMessage: (message) => handleConversationMessage(message),
+      onMessage: (message) => handleConversationMessage(message.message),
       onError: (error) => {
         console.error("Voice conversation error:", error);
         alert("Failed to connect or process the voice conversation. Please try again.");
