@@ -1,10 +1,11 @@
 "use client";
 
-import { ReactNode, useRef, useState, useEffect } from "react";
+import { ReactNode, useState, useEffect, useCallback } from "react";
 import { useActions } from "ai/rsc";
 import { Message } from "@/components/message";
 import { useScrollToBottom } from "@/components/use-scroll-to-bottom";
 import { motion, AnimatePresence } from "framer-motion";
+import { useConversation } from "@11labs/react";
 import { Mic } from "lucide-react";
 import React from "react";
 
@@ -13,12 +14,10 @@ export default function Home() {
 
   const [input, setInput] = useState<string>("");
   const [messages, setMessages] = useState<Array<ReactNode>>([]);
-  const [isRecording, setIsRecording] = useState(false);
-  const [realTimeText, setRealTimeText] = useState<string>(""); // For real-time transcription
   const [pastChats, setPastChats] = useState<{ title: string; messages: Array<ReactNode> }[]>([]);
-  const [selectedChat, setSelectedChat] = useState<number | null>(null); // Selected chat index
+  const [selectedChat, setSelectedChat] = useState<number | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
-  const [isSuggestionsVisible, setIsSuggestionsVisible] = useState(false); // Toggle state for suggestions
+  const [isSuggestionsVisible, setIsSuggestionsVisible] = useState(false);
   const [suggestedActions, setSuggestedActions] = useState([
     {
       title: "Review",
@@ -42,24 +41,152 @@ export default function Home() {
     },
   ]);
 
-  const inputRef = useRef<HTMLInputElement>(null);
   const [messagesContainerRef, messagesEndRef] =
     useScrollToBottom<HTMLDivElement>();
 
-  useEffect(() => {
-    if (messages.length > 0) {
-      const updateSuggestions = async () => {
-        const newSuggestions = await fetchSuggestions(messages);
-        setSuggestedActions(newSuggestions);
-      };
+    const conversation = useConversation({
+      onConnect: () => console.log("Voice conversation connected."),
+      onDisconnect: () => console.log("Voice conversation disconnected."),
+      onMessage: (message) => handleConversationMessage(message),
+      onError: (error) => {
+        console.error("Voice conversation error:", error);
+        alert("Failed to connect or process the voice conversation. Please try again.");
+      },
+    });
+    
+    const handleConversationMessage = (message: string) => {
+      if (message) {
+        console.log("Received voice response:", message);
+    
+        setMessages((prev) => [
+          ...prev,
+          <Message key={prev.length} role="assistant" content={message} />,
+        ]);
+    
+        updateSuggestions();
+      } else {
+        console.error("Empty message received from ElevenLabs.");
+      }
+    };
+    
+    const toggleRecording = useCallback(async () => {
+      if (conversation.status === "connected") {
+        await conversation.endSession();
+      } else {
+        try {
+          await navigator.mediaDevices.getUserMedia({ audio: true });
+          await conversation.startSession({
+            agentId: "bi9oqnqiYUItkWSSP7WA", // Replace with your agent ID
+          });
+        } catch (error) {
+          console.error("Failed to start conversation:", error);
+        }
+      }
+    }, [conversation]);
+    
+  const toggleSidebar = () => {
+    setIsSidebarCollapsed(!isSidebarCollapsed);
+  };
 
-      updateSuggestions();
-    }
-  }, [messages]);
+  const submitMessage = async () => {
+    if (!input.trim()) return;
 
-  async function fetchSuggestions(conversation: Array<ReactNode>) {
+    const userMessage = input.trim();
+
+    setMessages((prev) => [
+      ...prev,
+      <Message key={prev.length} role="user" content={userMessage} />,
+    ]);
+
+    const response: ReactNode = await sendMessage(userMessage);
+
+    setMessages((prev) => [...prev, response]);
+
+    setInput("");
+    updateSuggestions();
+  };
+
+  const handleSuggestedAction = async (action: string) => {
+    // Transform the action into a user-friendly format
+    const formattedAction = action
+      .replace(/_/g, " ")
+       // Replace underscores with spaces
+      .replace(/([a-z])([A-Z])/g, "$1 $2") // Split camelCase into separate words
+      .replace(/\b\w/g, (char) => char.toUpperCase()); // Capitalize each word
+  
+    // Add user-friendly message to conversation
+    setMessages((prev) => [
+      ...prev,
+      <Message key={prev.length} role="user" content={formattedAction} />,
+    ]);
+  
+    // Send the descriptive title directly to the AI for processing
+    const response: ReactNode = await sendMessage(action);
+  
+    // Add the AI response to the chat
+    setMessages((prev) => [...prev, response]);
+  
+    // Collapse suggestions after the user selects one
+    setIsSuggestionsVisible(false);
+  };
+
+  const startRecordingWithTranscription = async () => {
+  try {
+    const recognition = new (window as any).webkitSpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+
+    recognition.onresult = (event: any) => {
+      let transcript = "";
+      for (let i = 0; i < event.results.length; ++i) {
+        transcript += event.results[i][0].transcript;
+      }
+
+      // Append the transcription to the chat as the user's input
+      setMessages((prev) => [
+        ...prev,
+        <Message key={prev.length} role="user" content={transcript} />,
+      ]);
+      console.log("User Transcription:", transcript);
+
+      // Optionally send the transcription to ElevenLabs
+      sendMessage(transcript);
+    };
+
+    recognition.onerror = (error: any) => {
+      console.error("Speech recognition error:", error);
+    };
+
+    recognition.start();
+  } catch (error) {
+    console.error("Error starting transcription:", error);
+  }
+};
+
+const handleAIResponseWithTranscription = async (audioBlob: Blob) => {
+  try {
+    // Transcribe the AI's audio response
+    const transcription = await fetch('/api/transcribe', {
+      method: 'POST',
+      body: audioBlob
+    }).then(res => res.text());
+
+    // Append the transcription to the chat
+    setMessages((prev) => [
+      ...prev,
+      <Message key={prev.length} role="assistant" content={transcription} />,
+    ]);
+  } catch (error) {
+    console.error("Error transcribing AI response:", error);
+  }
+};
+
+  
+
+  const updateSuggestions = async () => {
     try {
-      const conversationHistory = conversation
+      console.log("Fetching suggestions...");
+      const conversationHistory = messages
         .map((message) => {
           if (React.isValidElement(message)) {
             const props = message.props;
@@ -80,113 +207,19 @@ export default function Home() {
       }
 
       const suggestions = await response.json();
-      return suggestions.map((suggestion: any) => ({
-        ...suggestion,
-        label: suggestion.label
-          .replace(/_/g, " ")
-          .replace(/\b\w/g, (char: string) => char.toUpperCase()),
-        action: suggestion.action || "Type your message",
-      }));
-    } catch (error) {
-      console.error("Error fetching suggestions:", error);
-      return [];
-    }
-  }
+      console.log("Suggestions fetched:", suggestions);
 
-  const toggleSidebar = () => {
-    setIsSidebarCollapsed(!isSidebarCollapsed);
-  };
-
-  const handleSuggestedAction = async (action: string) => {
-    // Transform the action into a user-friendly format
-    const formattedAction = action
-      .replace(/_/g, " ") // Replace underscores with spaces
-      .replace(/([a-z])([A-Z])/g, "$1 $2") // Split camelCase into separate words
-      .replace(/\b\w/g, (char) => char.toUpperCase()); // Capitalize each word
-  
-    // Add user-friendly message to conversation
-    setMessages((prev) => [
-      ...prev,
-      <Message key={prev.length} role="user" content={formattedAction} />,
-    ]);
-  
-    // Send the descriptive title directly to the AI for processing
-    const response: ReactNode = await sendMessage(formattedAction);
-  
-    // Add the AI response to the chat
-    setMessages((prev) => [...prev, response]);
-  
-    // Collapse suggestions after the user selects one
-    setIsSuggestionsVisible(false);
-  };
-  
-
-  const startRecording = async () => {
-    try {
-      setIsRecording(true);
-      setRealTimeText("");
-
-      const recognition = new (window as any).webkitSpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-
-      recognition.onresult = (event: any) => {
-        let transcript = "";
-        for (let i = 0; i < event.results.length; ++i) {
-          transcript += event.results[i][0].transcript;
-        }
-        setRealTimeText(transcript);
-      };
-
-      recognition.onend = async () => {
-        setIsRecording(false);
-        setInput(realTimeText);
-      };
-
-      recognition.start();
-    } catch (error) {
-      console.error("Error recording audio:", error);
-      setIsRecording(false);
-    }
-  };
-
-  const submitMessage = async () => {
-    const userMessage = input || realTimeText;
-
-    if (!userMessage.trim()) return;
-
-    if (selectedChat === null) {
-      const newChat = {
-        title: `Chat ${pastChats.length + 1}`,
-        messages: [
-          ...messages,
-          <Message key={messages.length} role="user" content={userMessage} />,
-        ],
-      };
-      setPastChats((prev) => [...prev, newChat]);
-      setSelectedChat(pastChats.length);
-    } else {
-      setPastChats((prev) =>
-        prev.map((chat, index) =>
-          index === selectedChat
-            ? {
-                ...chat,
-                messages: [
-                  ...chat.messages,
-                  <Message key={messages.length} role="user" content={userMessage} />,
-                ],
-              }
-            : chat
-        )
+      setSuggestedActions(
+        suggestions.map((suggestion: any) => ({
+          ...suggestion,
+          label: suggestion.label
+            .replace(/_/g, " ")
+            .replace(/\b\w/g, (char: string) => char.toUpperCase()),
+        }))
       );
+    } catch (error) {
+      console.error("Error updating suggestions:", error);
     }
-
-    const response: ReactNode = await sendMessage(userMessage);
-
-    setMessages((prev) => [...prev, response]);
-
-    setInput("");
-    setRealTimeText("");
   };
 
   useEffect(() => {
@@ -195,44 +228,122 @@ export default function Home() {
     }
   }, [selectedChat]);
 
+  useEffect(() => {
+    // Update suggestions whenever messages change
+    if (messages.length > 0) {
+      updateSuggestions();
+    }
+  }, [messages]);
+
   return (
     <div className="flex h-screen bg-white dark:bg-zinc-900">
+      {/* Sidebar for past chats */}
       <div
-        className={`transition-all duration-300 ${
-          isSidebarCollapsed ? "w-12" : "w-1/4"
-        } bg-[#10275E] shadow-md`}
-      >
-        <div className="p-4 flex justify-between items-center">
-          <h3 className="text-lg font-bold text-white">
-            {!isSidebarCollapsed && "Past Chats"}
-          </h3>
-          <button onClick={toggleSidebar} className="p-1 rounded-md text-white">
-            {isSidebarCollapsed ? "▶" : "◀"}
-          </button>
-        </div>
-        {!isSidebarCollapsed && (
-          <ul className="mt-4 space-y-2 px-4">
-            {pastChats.map((chat, index) => (
-              <li
-                key={index}
-                onClick={() => setSelectedChat(index)}
-                className={`p-2 rounded-md cursor-pointer ${
-                  selectedChat === index
-                    ? "bg-blue-500 text-white"
-                    : "bg-gray-100 dark:bg-zinc-700 hover:bg-gray-300 dark:hover:bg-zinc-600"
-                }`}
-              >
-                {chat.title}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+  className={`transition-all duration-300 ${
+    isSidebarCollapsed ? "w-12" : "w-1/4"
+  } bg-[#10275E] shadow-md flex flex-col`}
+>
+  {/* Sidebar Header */}
+  <div className="p-4 flex justify-between items-center border-b border-gray-600">
+    {!isSidebarCollapsed && (
+      <h3 className="text-lg font-bold text-white">Past Chats</h3>
+    )}
+    <button
+      onClick={toggleSidebar}
+      className="p-2 rounded-md text-white hover:bg-blue-700 transition"
+    >
+      {isSidebarCollapsed ? "▶" : "◀"}
+    </button>
+  </div>
 
-      <div className="flex flex-col flex-grow justify-evenly">
+  {/* Chat Search */}
+  {!isSidebarCollapsed && (
+    <div className="p-4 border-b border-gray-600">
+      <input
+        type="text"
+        placeholder="Search chats..."
+        className="w-full bg-gray-800 p-2 rounded-md text-white"
+        onChange={(e) => {
+          // Update filtered chats here
+        }}
+      />
+    </div>
+  )}
+
+  {/* Chat List */}
+  <div className="flex-grow overflow-y-auto">
+    {pastChats.length > 0 ? (
+      <ul className="mt-2 space-y-2 px-4">
+        {pastChats.map((chat, index) => (
+          <li
+            key={index}
+            onClick={() => setSelectedChat(index)}
+            className={`flex items-center justify-between p-2 rounded-md cursor-pointer ${
+              selectedChat === index
+                ? "bg-blue-500 text-white"
+                : "bg-gray-100 dark:bg-zinc-700 hover:bg-gray-300 dark:hover:bg-zinc-600"
+            }`}
+          >
+            <span className="truncate">{chat.title}</span>
+            {!isSidebarCollapsed && (
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    // Handle chat rename
+                  }}
+                  className="text-gray-500 hover:text-white"
+                >
+                  ✏️
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    // Handle chat delete
+                    setPastChats((prev) =>
+                      prev.filter((_, idx) => idx !== index)
+                    );
+                  }}
+                  className="text-gray-500 hover:text-white"
+                >
+                  🗑️
+                </button>
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+    ) : (
+      <div className="p-4 text-white text-center">
+        {isSidebarCollapsed ? null : "No chats available"}
+      </div>
+    )}
+  </div>
+
+  {/* Add Chat Button */}
+  {!isSidebarCollapsed && (
+    <div className="p-4">
+      <button
+        onClick={() => {
+          const newChat = { title: `New Chat ${pastChats.length + 1}`, messages: [] };
+          setPastChats((prev) => [...prev, newChat]);
+          setSelectedChat(pastChats.length);
+        }}
+        className="w-full bg-blue-500 text-white py-2 rounded-md hover:bg-blue-600 transition"
+      >
+        + New Chat
+      </button>
+    </div>
+  )}
+</div>
+
+
+      {/* Main chat area */}
+      <div className="flex flex-col flex-grow justify-between">
+        {/* Messages container */}
         <div
           ref={messagesContainerRef}
-          className="flex-grow overflow-y-scroll p-36"
+          className="flex-grow overflow-y-scroll p-8"
         >
           {messages.map((message, index) => (
             <React.Fragment key={index}>{message}</React.Fragment>
@@ -240,6 +351,7 @@ export default function Home() {
           <div ref={messagesEndRef} />
         </div>
 
+        {/* Suggestions Toggle */}
         <div className="relative flex items-center justify-center p-4">
           <motion.button
             onClick={() => setIsSuggestionsVisible(!isSuggestionsVisible)}
@@ -256,13 +368,13 @@ export default function Home() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 20 }}
-                className="absolute bottom-12 flex w-full items-center justify-center align-middle flex-wrap gap-4 p-4"
+                className="absolute bottom-12 flex  w-full items-center justify-center align-middle flex-wrap gap-4 p-4"
               >
                 {suggestedActions.map((action, index) => (
                   <motion.button
                     key={index}
                     onClick={() => handleSuggestedAction(action.action)}
-                    className="p-2 bg-gray-200 dark:bg-gray-700 rounded-lg shadow hover:bg-gray-300 dark:hover:bg-gray-600 transition"
+                    className="p-2 bg-gray-200 dark:bg-gray-700 rounded-lg shadow hover:bg-gray-300 dark:hover:bg-gray-600 transition w-52"
                     whileHover={{ scale: 1.1 }}
                   >
                     <span className="block font-semibold">{action.title}</span>
@@ -274,6 +386,7 @@ export default function Home() {
           </AnimatePresence>
         </div>
 
+        {/* Input and controls */}
         <div className="p-4 flex items-center space-x-4">
           <form
             onSubmit={async (event) => {
@@ -283,22 +396,33 @@ export default function Home() {
             className="flex-grow flex items-center"
           >
             <input
-              ref={inputRef}
               className="w-full bg-gray-200 p-2 rounded-md shadow-md dark:bg-zinc-700 dark:text-gray-300"
               placeholder="Type a message..."
-              value={realTimeText || input}
+              value={input}
               onChange={(e) => setInput(e.target.value)}
             />
             <button
-              type="button"
-              onClick={startRecording}
-              className="ml-2 p-2 bg-red-500 rounded-md text-white"
-              disabled={isRecording}
-              aria-label="Start recording"
+              type="submit"
+              className="ml-2 px-4 py-2 bg-blue-500 text-white rounded-lg"
             >
-              <Mic />
+              Send
             </button>
           </form>
+
+          {/* Record/Stop button */}
+          <motion.button
+            onClick={() => toggleRecording()}
+            className={`ml-4 p-4 rounded-full text-white ${
+              conversation.status === "connected" ? "bg-red-700" : "bg-red-500"
+            } shadow-md`}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            aria-label={
+              conversation.status === "connected" ? "Stop Recording" : "Start Recording"
+            }
+          >
+            <Mic size={24} />
+          </motion.button>
         </div>
       </div>
     </div>
