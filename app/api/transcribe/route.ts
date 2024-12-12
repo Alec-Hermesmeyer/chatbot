@@ -6,12 +6,7 @@ import fetch from 'node-fetch';
 import fs from 'fs';
 import path from 'path';
 
-// Disable Next.js's default body parser to handle file uploads
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-};
+
 
 export async function POST(req: NextRequest) {
   try {

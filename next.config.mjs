@@ -10,6 +10,9 @@ const nextConfig = {
         // your project has ESLint errors.
         ignoreDuringBuilds: true,
       },
+      api: {
+        bodyParser: false,
+      },
 };
 
 export default nextConfig;
