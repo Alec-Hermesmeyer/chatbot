@@ -1,51 +1,63 @@
+// route.ts
+
 import { NextRequest, NextResponse } from 'next/server';
-import OpenAI from 'openai';
+import FormData from 'form-data';
+import fetch from 'node-fetch';
 import fs from 'fs';
 import path from 'path';
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-if (!OPENAI_API_KEY) {
-  throw new Error('Missing OpenAI API Key.');
-}
-
-const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
-
-// Ensure file uploads work correctly
-// export const config = {
-//   api: {
-//     bodyParser: false,
-//   },
-// };
+// Disable Next.js's default body parser to handle file uploads
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
 
 export async function POST(req: NextRequest) {
   try {
+    // Parse the incoming form data
     const formData = await req.formData();
-    const file = formData.get('audio') as File; // Ensure the key is 'audio'
+    const file = formData.get('file') as File; // Ensure the key is 'file'
 
     if (!file) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
 
-    // Save the file temporarily
+    // Save the uploaded file to a temporary location
     const tempFilePath = path.join('/tmp', file.name);
     const fileBuffer = Buffer.from(await file.arrayBuffer());
     fs.writeFileSync(tempFilePath, fileBuffer);
 
-    // Pass the file to OpenAI Whisper for transcription
-    const transcription = await openai.audio.transcriptions.create({
-      file: fs.createReadStream(tempFilePath) as any,
-      model: 'whisper-1',
-      response_format: 'json',
+    // Prepare form data to send to the Flask server
+    const form = new FormData();
+    form.append('file', fs.createReadStream(tempFilePath), file.name);
+
+    // Send the file to the Flask server's /transcribe endpoint
+    const flaskResponse = await fetch('http://127.0.0.1:5000/transcribe', {
+      method: 'POST',
+      body: form,
+      headers: form.getHeaders(), // Important for multipart/form-data
     });
 
-    // Clean up the temporary file
+    // Remove the temporary file after sending
     fs.unlinkSync(tempFilePath);
 
-    return NextResponse.json({ text: transcription.text });
+    if (!flaskResponse.ok) {
+      const errorText = await flaskResponse.text();
+      console.error('Error from Flask server:', errorText);
+      return NextResponse.json(
+        { error: 'Error transcribing audio. Please check the server logs.' },
+        { status: 500 }
+      );
+    }
+
+    const data = await flaskResponse.json();
+    // Return the transcription result to the client
+    return NextResponse.json({ transcription: (data as any).transcription }, { status: 200 });
   } catch (error) {
-    console.error('Error transcribing audio:', error);
+    console.error('Error processing transcription:', error);
     return NextResponse.json(
-      { error: 'Error transcribing audio. Please check the server logs.' },
+      { error: 'Internal Server Error. Please check the server logs.' },
       { status: 500 }
     );
   }
