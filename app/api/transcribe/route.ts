@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import FormData from 'form-data';
 import fs from 'fs';
 import path from 'path';
-import { fileTypeFromFile } from 'file-type';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegPath from '@ffmpeg-installer/ffmpeg';
 
@@ -11,9 +10,7 @@ ffmpeg.setFfmpegPath(ffmpegPath.path);
 export async function POST(req: NextRequest) {
   try {
     const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-    if (!OPENAI_API_KEY) {
-      throw new Error('OpenAI API key is missing.');
-    }
+    if (!OPENAI_API_KEY) throw new Error('OpenAI API key is missing.');
 
     // Parse the incoming file
     const formData = await req.formData();
@@ -23,7 +20,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
 
-    // Save the uploaded file
+    // Save the uploaded file to a temporary location
     const tempWebmPath = path.join('/tmp', file.name);
     const fileBuffer = Buffer.from(await file.arrayBuffer());
     fs.writeFileSync(tempWebmPath, fileBuffer);
@@ -39,11 +36,11 @@ export async function POST(req: NextRequest) {
         .on('error', reject)
         .run();
     });
-    
-
-    // Verify file type
-    const fileTypeResult = await fileTypeFromFile(outputWavPath);
-    console.log('Converted file type:', fileTypeResult);
+    // Verify file type dynamically
+    const { fileTypeFromBuffer } = await import('file-type');
+    const fileBufferWav = fs.readFileSync(outputWavPath);
+    const fileTypeResult = await fileTypeFromBuffer(fileBufferWav);
+    console.log('File Type:', fileTypeResult);
 
     // Prepare for Whisper API
     const openAIForm = new FormData();
