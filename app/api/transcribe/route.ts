@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import FormData from 'form-data';
 import fs from 'fs';
 import path from 'path';
-import fileType from 'file-type';
+import { fileTypeFromFile } from 'file-type';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegPath from '@ffmpeg-installer/ffmpeg';
 
@@ -10,7 +10,7 @@ ffmpeg.setFfmpegPath(ffmpegPath.path);
 
 export async function POST(req: NextRequest) {
   try {
-    const OPENAI_API_KEY = process.env.NEXT_PUBLIC_MESSAGE_API_KEY;
+    const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
     if (!OPENAI_API_KEY) {
       throw new Error('OpenAI API key is missing.');
     }
@@ -39,9 +39,10 @@ export async function POST(req: NextRequest) {
         .on('error', reject)
         .run();
     });
+    
 
     // Verify file type
-    const fileTypeResult = await fileType.fromFile(outputWavPath);
+    const fileTypeResult = await fileTypeFromFile(outputWavPath);
     console.log('Converted file type:', fileTypeResult);
 
     // Prepare for Whisper API
