@@ -135,7 +135,7 @@ import fileType from 'file-type';
 
 export async function POST(req: NextRequest) {
   try {
-    const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+    const OPENAI_API_KEY = process.env.NEXT_PUBLIC_OPENAI_API_KEY
     if (!OPENAI_API_KEY) {
       throw new Error('OpenAI API key not found.');
     }
@@ -182,7 +182,7 @@ console.log('Sending file to OpenAI:', outputWavPath); // Log the file being sen
 const openAIResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
   method: 'POST',
   headers: {
-    Authorization: `Bearer ${OPENAI_API_KEY}`,
+      "Authorization": `Bearer ${process.env.NEXT_PUBLIC_MESSAGE_API_KEY}`,        
     ...openAIForm.getHeaders(),
   },
   body: openAIForm as unknown as BodyInit,

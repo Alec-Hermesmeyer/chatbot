@@ -1,202 +1,228 @@
-// ai-sdk-preview-rsc-genui-example/app/(preview)/page.tsx
 "use client";
 
-import React, { useState, useRef } from "react";
-import { useActions } from "ai/rsc"; // Ensure this path is correct
-import { Message } from "@/components/message";
+import React, { useState, useRef, useEffect } from "react";
 import { useScrollToBottom } from "@/components/use-scroll-to-bottom";
 import { motion } from "framer-motion";
-import { Mic } from "lucide-react";
+import { Mic, Menu, X } from "lucide-react";
+import AIResponse from "@/components/AIResponse";
 
 export default function Home() {
-  const { sendMessage } = useActions();
   const [input, setInput] = useState<string>("");
-  const [messages, setMessages] = useState<Array<React.ReactNode>>([]);
+  const [messages, setMessages] = useState<
+    Array<{ role: string; content: string }>
+  >([]);
+  const [suggestions, setSuggestions] = useState<
+    Array<{ title: string; action: string }>
+  >([]);
   const [isRecording, setIsRecording] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [loadingMessage, setLoadingMessage] = useState<string>(""); // Dynamic status
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  const [messagesContainerRef, messagesEndRef] = useScrollToBottom<HTMLDivElement>();
-  const [audioFile, setAudioFile] = useState<File | null>(null); // State for the audio file
+  const messagesContainerRef = useScrollToBottom<HTMLDivElement>();
 
-  // Handle sending the message to the chat bot
-  const handleSendMessage = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!input.trim()) {
-      console.error("No message to send");
-      return;
-    }
-
-    // Add the user's message to the chat
-    setMessages((prev) => [
-      ...prev,
-      <Message key={prev.length} role="user" content={input} />,
-    ]);
-    
-    const conversationHistory = [
-      { role: "system", content: "You are an expert in law and provide legal advice." },
-      ...messages.map(msg => ({ role: msg.props.role, content: msg.props.content })),
-      { role: "user", content: input }
+  const defaultSuggestions = [
+    { title: "What are my legal rights?", action: "What are my legal rights in this case?" },
+    { title: "Ask about contract law", action: "Explain contract law principles." },
+    { title: "How to file a lawsuit?", action: "How do I file a lawsuit?" },
+    { title: "Get help with legal terms", action: "Explain the legal term 'breach of contract'." },
   ];
 
-    // Call the OpenAI API to get a response
+  useEffect(() => {
+    setSuggestions(defaultSuggestions);
+  }, []);
+
+  const fetchSuggestions = async (
+    conversation: Array<{ role: string; content: string }>
+  ) => {
     try {
-      const response = await fetch("https://api.openai.com/v1/chat/completions", { // OpenAI API endpoint
+      const response = await fetch("/api/getSuggestions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversation }),
+      });
+      if (!response.ok) throw new Error("Failed to fetch suggestions.");
+      const data = await response.json();
+      setSuggestions(data);
+    } catch (error) {
+      console.error("Error fetching suggestions:", error);
+    }
+  };
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim()) return;
+
+    const newMessage = { role: "user", content: input };
+    setMessages((prev) => [...prev, newMessage]);
+    setInput("");
+    setLoading(true);
+    setLoadingMessage("Thinking...");
+
+    const loadingMessages = ["Analyzing input...", "Generating response...", "Almost there..."];
+    let messageIndex = 0;
+    const messageInterval = setInterval(() => {
+      setLoadingMessage(loadingMessages[messageIndex]);
+      messageIndex = (messageIndex + 1) % loadingMessages.length;
+    }, 2000);
+
+    try {
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
-          },
+          Authorization: `Bearer ${process.env.NEXT_PUBLIC_MESSAGE_API_KEY}`,
+        },
         body: JSON.stringify({
-          model: "gpt-3.5-turbo", // Specify the model you want to use
-          messages: conversationHistory,
+          model: "gpt-4",
+          messages: [...messages, newMessage],
         }),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error("Error response from OpenAI:", errorData);
-        setMessages((prev) => [
-          ...prev,
-          <Message key={prev.length} role="assistant" content="Error getting response from AI." />,
-        ]);
-      } else {
-        const result = await response.json();
-        console.log("OpenAI response:", result);
-        const aiMessage = result.choices[0].message.content; // Extract the AI's response
-        setMessages((prev) => [
-          ...prev,
-          <Message key={prev.length} role="assistant" content={aiMessage} />, // Display the AI's response
-        ]);
-      }
+      const result = await response.json();
+      const aiMessage = result.choices[0]?.message?.content || "No response.";
+      setMessages((prev) => [...prev, { role: "assistant", content: aiMessage }]);
+      fetchSuggestions([...messages, newMessage, { role: "assistant", content: aiMessage }]);
     } catch (error) {
-      console.error("Error during fetch:", error);
-      setMessages((prev) => [
-        ...prev,
-        <Message key={prev.length} role="assistant" content="Error processing AI response." />,
-      ]);
-    }
-
-    setInput(""); // Clear the input after sending
-  };
-
-  // Handle audio transcription
-  const handleTranscribe = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!audioFile) {
-      console.error("No audio file selected");
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append("file", audioFile);
-    formData.append("model", "whisper-1"); // Add the model parameter
-
-    try {
-      const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-        method: "POST",
-        headers: {
-        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
-        },
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error("Error response from API:", errorData);
-        setMessages((prev) => [
-          ...prev,
-          <Message key={prev.length} role="assistant" content="Failed to transcribe audio." />,
-        ]);
-      } else {
-        const result = await response.json();
-        console.log("Transcription result:", result);
-        setInput(result.text); // Set the transcription result to the input
-      }
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    } catch (error) {
-      console.error("Error during fetch:", error);
-      setMessages((prev) => [
-        ...prev,
-        <Message key={prev.length} role="assistant" content="Error processing transcription." />,
-      ]);
+      console.error("Error sending message:", error);
+      setMessages((prev) => [...prev, { role: "assistant", content: "Error processing response." }]);
+    } finally {
+      clearInterval(messageInterval);
+      setLoading(false);
+      setLoadingMessage("");
     }
   };
 
-  // Start recording audio
   const startRecording = async () => {
-    // Request microphone access
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     mediaRecorderRef.current = new MediaRecorder(stream);
-    
+    audioChunksRef.current = [];
+
     mediaRecorderRef.current.ondataavailable = (event) => {
-      audioChunksRef.current.push(event.data);
+      if (event.data.size > 0) audioChunksRef.current.push(event.data);
     };
 
-    mediaRecorderRef.current.onstop = () => {
-      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
-      audioChunksRef.current = []; // Clear the chunks for the next recording
-      setAudioFile(new File([audioBlob], "recording.wav")); // Set the audio file for transcription
+    mediaRecorderRef.current.onstop = async () => {
+      const audioBlob = new Blob(audioChunksRef.current, { type: "audio/wav" });
+      const audioFile = new File([audioBlob], "recording.wav");
+
+      const formData = new FormData();
+      formData.append("file", audioFile);
+      formData.append("model", "whisper-1");
+
+      try {
+        const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${process.env.NEXT_PUBLIC_MESSAGE_API_KEY}` },
+          body: formData,
+        });
+
+        if (!response.ok) throw new Error("Failed to transcribe audio.");
+        const result = await response.json();
+        setInput(result.text); // Update input with transcription
+      } catch (error) {
+        console.error("Error transcribing audio:", error);
+      } finally {
+        setIsRecording(false);
+      }
     };
 
     mediaRecorderRef.current.start();
     setIsRecording(true);
   };
 
-  // Stop recording audio
   const stopRecording = () => {
-    if (mediaRecorderRef.current) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      // Call handleTranscribe after stopping the recording
-      handleTranscribe(new Event('submit')); // Simulate form submission
-    }
+    mediaRecorderRef.current?.stop();
   };
 
   return (
-    <div className="flex h-screen bg-white dark:bg-zinc-900">
-      <div className="flex flex-col flex-grow justify-between">
-        {/* Messages Container */}
-        <div ref={messagesContainerRef} className="flex-grow overflow-y-scroll p-8">
-          {messages.map((message, index) => (
-            <React.Fragment key={index}>{message}</React.Fragment>
+    <div className="flex h-screen bg-gray-100 text-gray-800">
+      {/* Sidebar */}
+      {isSidebarOpen && (
+        <aside className="w-72 bg-gray-700 text-slate-200 flex-shrink-0 p-6 space-y-6 shadow-lg">
+          <div className="flex items-center justify-between">
+            <h2 className="text-2xl font-semibold">Menu</h2>
+            <button onClick={() => setIsSidebarOpen(false)} aria-label="Close Sidebar">
+              <X className="w-6 h-6" />
+            </button>
+          </div>
+          <nav>
+            <ul className="space-y-4">
+              <li className="hover:text-gray-300 cursor-pointer">🏠 Home</li>
+              <li className="hover:text-gray-300 cursor-pointer">📄 History</li>
+              <li className="hover:text-gray-300 cursor-pointer">⚙️ Settings</li>
+            </ul>
+          </nav>
+        </aside>
+      )}
+
+      {/* Main Chat Section */}
+      <div className="flex flex-col flex-grow bg-white shadow-xl">
+        <header className="flex items-center justify-between p-4 bg-[#10275E] text-white shadow-md">
+          <button onClick={() => setIsSidebarOpen(true)} aria-label="Open Sidebar">
+            <Menu />
+          </button>
+        </header>
+
+        {/* Messages */}
+        <div ref={messagesContainerRef} className="flex-grow overflow-y-auto p-6 space-y-4">
+          {messages.map((msg, index) => (
+            <div key={index} className={`mb-4 ${msg.role === "user" ? "text-right" : "text-left"}`}>
+              {msg.role === "assistant" ? (
+                <AIResponse content={msg.content} />
+              ) : (
+                <div className="inline-block p-2 bg-blue-500 text-white rounded-lg shadow-md">
+                  {msg.content}
+                </div>
+              )}
+            </div>
           ))}
-          <div ref={messagesEndRef} />
+          {loading && (
+            <div className="text-gray-500 animate-pulse"> {loadingMessage} </div>
+          )}
         </div>
 
-        {/* Input and Recording Controls */}
-        <div className="p-4 flex items-center space-x-4">
-          {/* Text Input for Transcription */}
-          <form onSubmit={handleSendMessage} className="flex-grow flex items-center">
-            <input
-              type="text"
-              value={input} // Bind the input state
-              onChange={(e) => setInput(e.target.value)} // Update input state on change
-              className="w-full bg-gray-200 p-2 rounded-md shadow-md dark:bg-zinc-700 dark:text-gray-300"
-              placeholder="Enter transcription text"
-              title="Transcription Text"
-            />
-           
-            <button
-              type="submit"
-              className="ml-2 px-4 py-2 bg-blue-500 text-white rounded-lg"
-            >
-              Send
-            </button>
-          </form>
+        {/* Suggestions */}
+        {suggestions.length > 0 && (
+          <div className="flex flex-wrap gap-2 justify-center p-4">
+            {suggestions.map((suggestion, index) => (
+              <button
+                key={index}
+                onClick={() => setInput(suggestion.action)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-500 shadow-sm"
+              >
+                {suggestion.title}
+              </button>
+            ))}
+          </div>
+        )}
 
-          {/* Recording Button */}
+        {/* Input and Controls */}
+        <footer className="p-4 bg-gray-100 border-t flex items-center space-x-4">
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Type a message..."
+            className="flex-grow border p-2 rounded-md"
+          />
+          <button
+            onClick={handleSendMessage}
+            className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-500"
+          >
+            Send
+          </button>
           <motion.button
             onClick={isRecording ? stopRecording : startRecording}
-            className={`ml-4 p-4 rounded-full text-white ${
-              isRecording ? "bg-red-700" : "bg-red-500"
-            } shadow-md`}
+            className={`p-3 rounded-full text-white ${
+              isRecording ? "bg-red-600" : "bg-blue-600"
+            }`}
             whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            aria-label={isRecording ? "Stop Recording" : "Start Recording"}
           >
             <Mic size={24} />
           </motion.button>
-        </div>
+        </footer>
       </div>
     </div>
   );
