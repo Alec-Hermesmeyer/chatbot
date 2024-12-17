@@ -7,25 +7,31 @@ import ffmpegPath from '@ffmpeg-installer/ffmpeg';
 
 ffmpeg.setFfmpegPath(ffmpegPath.path);
 
+export const dynamic = "force-dynamic"; // Prevent static generation during build
+
 export async function POST(req: NextRequest) {
   try {
-    const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-    if (!OPENAI_API_KEY) throw new Error('OpenAI API key is missing.');
+    if (process.env.NODE_ENV !== "production" && !process.env.NEXT_PUBLIC_OPENAI_API_KEY) {
+      console.error("OpenAI API Key missing");
+      return NextResponse.json(
+        { error: "OpenAI API key not found" },
+        { status: 500 }
+      );
+    }
 
-    // Parse the incoming file
+    console.log("Processing transcription request...");
+
     const formData = await req.formData();
     const file = formData.get('file') as File;
 
     if (!file) {
-      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+      return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
-    // Save the uploaded file to a temporary location
     const tempWebmPath = path.join('/tmp', file.name);
     const fileBuffer = Buffer.from(await file.arrayBuffer());
     fs.writeFileSync(tempWebmPath, fileBuffer);
 
-    // Convert to WAV
     const outputWavPath = path.join('/tmp', 'output.wav');
     await new Promise<void>((resolve, reject) => {
       ffmpeg(tempWebmPath)
@@ -36,13 +42,7 @@ export async function POST(req: NextRequest) {
         .on('error', reject)
         .run();
     });
-    // Verify file type dynamically
-    const { fileTypeFromBuffer } = await import('file-type');
-    const fileBufferWav = fs.readFileSync(outputWavPath);
-    const fileTypeResult = await fileTypeFromBuffer(fileBufferWav);
-    console.log('File Type:', fileTypeResult);
 
-    // Prepare for Whisper API
     const openAIForm = new FormData();
     openAIForm.append('file', fs.createReadStream(outputWavPath), 'output.wav');
     openAIForm.append('model', 'whisper-1');
@@ -50,27 +50,30 @@ export async function POST(req: NextRequest) {
     const openAIResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        Authorization: `Bearer ${process.env.NEXT_PUBLIC_OPENAI_API_KEY}`,
         ...openAIForm.getHeaders(),
       },
       body: openAIForm as unknown as BodyInit,
     });
 
-    // Cleanup
     fs.unlinkSync(tempWebmPath);
     fs.unlinkSync(outputWavPath);
 
     if (!openAIResponse.ok) {
       const errorData = await openAIResponse.text();
-      throw new Error(`OpenAI Error: ${errorData}`);
+      console.error("OpenAI Error:", errorData);
+      return NextResponse.json(
+        { error: "OpenAI transcription failed" },
+        { status: 500 }
+      );
     }
 
     const { text } = await openAIResponse.json();
     return NextResponse.json({ transcription: text }, { status: 200 });
   } catch (error) {
-    console.error('Error processing transcription:', error);
+    console.error("Error during transcription:", error);
     return NextResponse.json(
-      { error: 'Failed to transcribe audio. Check server logs.' },
+      { error: "Internal Server Error" },
       { status: 500 }
     );
   }
