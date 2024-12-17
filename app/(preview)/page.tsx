@@ -21,6 +21,7 @@ export default function Home() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const messagesContainerRef = useScrollToBottom<HTMLDivElement>();
+  const [containerRef] = messagesContainerRef;
 
   const defaultSuggestions = [
     { title: "What are my legal rights?", action: "What are my legal rights in this case?" },
@@ -166,7 +167,7 @@ export default function Home() {
         </header>
 
         {/* Messages */}
-        <div ref={messagesContainerRef} className="flex-grow overflow-y-auto p-6 space-y-4">
+        <div ref={containerRef} className="flex-grow overflow-y-auto p-6 space-y-4">
           {messages.map((msg, index) => (
             <div key={index} className={`mb-4 ${msg.role === "user" ? "text-right" : "text-left"}`}>
               {msg.role === "assistant" ? (
@@ -189,7 +190,7 @@ export default function Home() {
             {suggestions.map((suggestion, index) => (
               <button
                 key={index}
-                onClick={() => setInput(suggestion.action)}
+                onClick={() => setInput(suggestion.title)}
                 className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-500 shadow-sm"
               >
                 {suggestion.title}
