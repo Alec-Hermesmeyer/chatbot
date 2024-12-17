@@ -3,9 +3,13 @@ import FormData from 'form-data';
 import fs from 'fs';
 import path from 'path';
 import ffmpeg from 'fluent-ffmpeg';
-import ffmpegPath from '@ffmpeg-installer/ffmpeg';
+import ffmpegPath from "ffmpeg-static";
 
-ffmpeg.setFfmpegPath(ffmpegPath.path);
+if (ffmpegPath) {
+  ffmpeg.setFfmpegPath(ffmpegPath);
+} else {
+  console.error("ffmpeg-static path is null");
+}
 
 export const dynamic = "force-dynamic"; // Prevent static generation during build
 
