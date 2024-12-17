@@ -167,7 +167,7 @@ export default function Home() {
         </header>
 
         {/* Messages */}
-        <div ref={containerRef} className="flex-grow overflow-y-auto p-6 space-y-4">
+        <div ref={containerRef} className="flex-grow px-40 overflow-y-auto p-6 space-y-4">
           {messages.map((msg, index) => (
             <div key={index} className={`mb-4 ${msg.role === "user" ? "text-right" : "text-left"}`}>
               {msg.role === "assistant" ? (
@@ -180,7 +180,7 @@ export default function Home() {
             </div>
           ))}
           {loading && (
-            <div className="text-gray-500 animate-pulse"> {loadingMessage} </div>
+            <div className="p-2 px-8 w-60 bg-gray-200 rounded-lg shadow-md text-gray-500 animate-pulse"> {loadingMessage} </div>
           )}
         </div>
 

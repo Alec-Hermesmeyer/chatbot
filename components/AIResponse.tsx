@@ -60,7 +60,7 @@ const AIResponse: React.FC<AIResponseProps> = ({ content }) => {
   };
 
   return (
-    <div className="p-2 bg-gray-200 rounded-lg shadow-md px-8 space-y-4">
+    <div className="p-2 bg-gray-200 rounded-lg shadow-md py-8 px-8 space-y-4">
       <div className="text-gray-800 leading-relaxed">
         {content.includes("\n") ? (
           <ul className="list-outside space-y-2">{renderFormattedContent(content)}</ul>
