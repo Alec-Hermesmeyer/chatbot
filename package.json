@@ -15,6 +15,7 @@
     "@vercel/kv": "^2.0.0",
     "ai": "^3.4.33",
     "d3-scale": "^4.0.2",
+    "file-type": "^19.6.0",
     "form-data": "^4.0.1",
     "framer-motion": "^11.3.19",
     "lucide-react": "^0.464.0",
