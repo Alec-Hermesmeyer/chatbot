@@ -44,8 +44,8 @@ export default function Home() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer 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`, // Add your OpenAI API key here
-        },
+          "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+          },
         body: JSON.stringify({
           model: "gpt-3.5-turbo", // Specify the model you want to use
           messages: conversationHistory,
@@ -95,7 +95,7 @@ export default function Home() {
       const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
         method: "POST",
         headers: {
-          "Authorization": `Bearer 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`, // Add your OpenAI API key here
+        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
         },
         body: formData,
       });
