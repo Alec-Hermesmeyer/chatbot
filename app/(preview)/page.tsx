@@ -246,10 +246,10 @@ export default function Home() {
             {suggestions.map((suggestion, index) => (
               <button
                 key={index}
-                onClick={() => setInput(suggestion.title)}
+                onClick={() => setInput(suggestion.action)}
                 className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-500 shadow-sm"
               >
-                {suggestion.title}
+                {suggestion.action}
               </button>
             ))}
           </div>
