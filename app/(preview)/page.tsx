@@ -66,7 +66,7 @@ export default function Home() {
     const messageInterval = setInterval(() => {
       setLoadingMessage(loadingMessages[messageIndex]);
       messageIndex = (messageIndex + 1) % loadingMessages.length;
-    }, 2000);
+    }, 8000);
 
     try {
       const response = await fetch("https://api.openai.com/v1/chat/completions", {
