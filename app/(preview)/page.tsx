@@ -188,7 +188,7 @@ export default function Home() {
             body: JSON.stringify({
               model: "gpt-4",
               messages: [
-                { role: "system", content: "Fix grammar and punctuation." },
+                { role: "system", content: "Fix grammar and punctuation. Return only the corrected text. Do not add quotation marks, asterisks, or extra formatting." },
                 { role: "user", content: rawTranscript },
               ],
             }),
