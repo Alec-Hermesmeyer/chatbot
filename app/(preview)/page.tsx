@@ -123,51 +123,112 @@ export default function Home() {
   };
 
   const startRecording = async () => {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    mediaRecorderRef.current = new MediaRecorder(stream);
-    audioChunksRef.current = [];
-
-    mediaRecorderRef.current.ondataavailable = (event) => {
-      if (event.data.size > 0) audioChunksRef.current.push(event.data);
-    };
-
-    mediaRecorderRef.current.onstop = async () => {
-      const audioBlob = new Blob(audioChunksRef.current, { type: "audio/wav" });
-      const audioFile = new File([audioBlob], "recording.wav");
-
-      const formData = new FormData();
-      formData.append("file", audioFile);
-      formData.append("model", "whisper-1");
-
-      try {
-        const response = await fetch(
-          "https://api.openai.com/v1/audio/transcriptions",
-          {
+    try {
+      // Ensure browser supports MediaRecorder
+      if (!window.MediaRecorder) {
+        alert("Your browser does not support audio recording.");
+        return;
+      }
+  
+      console.log("Requesting microphone access...");
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  
+      // Create MediaRecorder instance
+      mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: "audio/webm" });
+      audioChunksRef.current = [];
+  
+      setIsRecording(true);
+      setInput("🎙️ Listening... Speak now.");
+  
+      mediaRecorderRef.current.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunksRef.current.push(event.data);
+      };
+  
+      mediaRecorderRef.current.onstop = async () => {
+        setIsRecording(false);
+        setInput("🔄 Processing speech...");
+  
+        console.log("Recording stopped, sending to Whisper...");
+        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        const audioFile = new File([audioBlob], "recording.webm");
+  
+        const formData = new FormData();
+        formData.append("file", audioFile);
+        formData.append("model", "whisper-1");
+  
+        try {
+          // Step 1: Transcribe audio with Whisper API
+          const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
             method: "POST",
             headers: {
-              Authorization: `Bearer ${process.env.NEXT_PUBLIC_MESSAGE_API_KEY}`,
+              Authorization: `Bearer ${process.env.NEXT_PUBLIC_OPENAI_API_KEY}`,
             },
             body: formData,
+          });
+  
+          if (!response.ok) {
+            const errorData = await response.json();
+            console.error("Whisper API Error:", errorData);
+            throw new Error("Failed to transcribe audio.");
           }
-        );
-
-        if (!response.ok) throw new Error("Failed to transcribe audio.");
-        const result = await response.json();
-        setInput(result.text); // Update input with transcription
-      } catch (error) {
-        console.error("Error transcribing audio:", error);
-      } finally {
-        setIsRecording(false);
-      }
-    };
-
-    mediaRecorderRef.current.start();
-    setIsRecording(true);
+  
+          const result = await response.json();
+          const rawTranscript = result.text.trim();
+          console.log("Raw Transcript:", rawTranscript);
+  
+          setInput(rawTranscript + " (Correcting...)");
+  
+          // Step 2: Send transcript to GPT-4 for punctuation fixes
+          const gptResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${process.env.NEXT_PUBLIC_OPENAI_API_KEY}`,
+            },
+            body: JSON.stringify({
+              model: "gpt-4",
+              messages: [
+                { role: "system", content: "Fix grammar and punctuation." },
+                { role: "user", content: rawTranscript },
+              ],
+            }),
+          });
+  
+          if (!gptResponse.ok) {
+            const errorData = await gptResponse.json();
+            console.error("GPT-4 API Error:", errorData);
+            throw new Error("Failed to process text.");
+          }
+  
+          const gptResult = await gptResponse.json();
+          const cleanedTranscript = gptResult.choices[0]?.message?.content.trim();
+          console.log("Cleaned Transcript:", cleanedTranscript);
+  
+          setInput(cleanedTranscript); // Replace text with cleaned version
+  
+        } catch (error) {
+          console.error("Error processing transcription:", error);
+          setInput("❌ Error processing transcription.");
+        }
+      };
+  
+      mediaRecorderRef.current.start();
+    } catch (error) {
+      console.error("Microphone access error:", error);
+      alert("Microphone access is required for speech-to-text.");
+      setIsRecording(false);
+    }
   };
-
+  
   const stopRecording = () => {
-    mediaRecorderRef.current?.stop();
+    if (mediaRecorderRef.current) {
+      mediaRecorderRef.current.stop();
+    }
   };
+  
+  
+  
+
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto"; // Reset height
